@@ -2,7 +2,7 @@
 
 Create YouTube Music playlists with top songs from your festival lineup automatically! Simply paste your lineup, and the app will create a playlist with the most popular songs from each artist.
 
-## Features 🌟
+## Features
 
 - Create playlists from festival lineups automatically
 - Choose number of top songs per artist (1-10 songs)
@@ -13,11 +13,11 @@ Create YouTube Music playlists with top songs from your festival lineup automati
 - Detailed feedback about added songs
 - Direct links to created playlists
 
-## Live Demo 🚀
+## Live Demo
 
-Visit the app at: [your-app-url].streamlit.app
+Visit the app at: [lineup-playlist-creator.streamlit.app](https://lineup-playlist-creator.streamlit.app/)
 
-## Usage 📝
+## Usage
 
 1. **Authenticate with YouTube Music**
    - Open YouTube Music in your browser
@@ -44,7 +44,7 @@ Visit the app at: [your-app-url].streamlit.app
    - Click "Create Playlist"
    - Wait for the magic to happen!
 
-## Authentication 🔐
+## Authentication
 
 - Authentication data is stored locally in your browser
 - You only need to authenticate once unless you log out
@@ -52,7 +52,7 @@ Visit the app at: [your-app-url].streamlit.app
 - You can check authentication validity at any time
 - Auto-logout if authentication becomes invalid
 
-## Development 💻
+## Development
 
 ### Prerequisites
 
@@ -79,10 +79,12 @@ streamlit run app.py
 
 ### Dependencies
 
-- streamlit==1.24.0
-- ytmusicapi==1.1.0
+Not necessarily in those versions, but those are what´s tested and confirmed working.
 
-## Deployment 🚀
+- streamlit==1.40.1
+- ytmusicapi==1.8.2
+
+## Deployment
 
 This app is designed to be deployed on Streamlit Cloud:
 
@@ -90,7 +92,7 @@ This app is designed to be deployed on Streamlit Cloud:
 2. Go to [share.streamlit.io](https://share.streamlit.io)
 3. Deploy from your forked repository
 
-## Security 🔒
+## Security
 
 - No credentials are stored on the server
 - Authentication data is stored only in your browser's local storage
@@ -98,7 +100,7 @@ This app is designed to be deployed on Streamlit Cloud:
 - Authentication data is cleared on logout
 - Automatic session cleanup for invalid authentication
 
-## Limitations ⚠️
+## Limitations
 
 - YouTube Music authentication may expire after some time
 - Rate limits may apply for many playlist operations
@@ -106,7 +108,7 @@ This app is designed to be deployed on Streamlit Cloud:
 - Authentication needs to be refreshed occasionally
 - Private/incognito mode won't persist authentication
 
-## Troubleshooting 🔧
+## Troubleshooting
 
 If you encounter issues:
 
@@ -126,7 +128,7 @@ If you encounter issues:
    - Check your internet connection
    - Wait a few minutes and try again
 
-## Contributing 🤝
+## Contributing
 
 1. Fork the repository
 2. Create a new branch (`git checkout -b feature/amazing-feature`)
@@ -134,19 +136,15 @@ If you encounter issues:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## License 📄
+## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
 
-## Acknowledgments 👏
+## Acknowledgments
 
 - [ytmusicapi](https://github.com/sigma67/ytmusicapi) - The awesome API wrapper for YouTube Music
 - [Streamlit](https://streamlit.io/) - The incredible framework for building data apps
 
-## Author ✍️
+## Author
 
-[Your Name] - [your@email.com]
-
----
-
-*Made with ❤️ for music lovers and festival goers*
+Vincent Göckeritz
