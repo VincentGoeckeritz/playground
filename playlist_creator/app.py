@@ -430,7 +430,7 @@ def main():
                             save_persistent_auth(encoded_auth)
                             st.success("Authentication successful!")
                             time.sleep(1)  # Give user time to see success message
-                            st.experimental_rerun()
+                            st.rerun()
                         else:
                             st.error("Authentication test failed - please check your credentials")
                     except Exception as e:
@@ -479,19 +479,19 @@ def main():
                     st.session_state.authenticated = False
                     if 'persistent_auth' in st.session_state:
                         del st.session_state.persistent_auth
-                    st.experimental_rerun()
+                    st.rerun()
             except Exception as e:
                 st.error(f"Authentication error: {str(e)}")
                 st.session_state.authenticated = False
                 if 'persistent_auth' in st.session_state:
                     del st.session_state.persistent_auth
-                st.experimental_rerun()
+                st.rerun()
 
         if st.button("📤 Logout"):
             st.session_state.authenticated = False
             if 'persistent_auth' in st.session_state:
                 del st.session_state.persistent_auth
-            st.experimental_rerun()
+            st.rerun()
 
     # Main application (only shown when authenticated)
     with st.expander("ℹ️ How to use"):
@@ -536,7 +536,7 @@ def main():
     # Logout option
     if st.button("📤 Logout", type="secondary", help="Clear your authentication"):
         st.session_state.authenticated = False
-        st.experimental_rerun()
+        st.rerun()
 
     if st.button("🎵 Create Playlist", type="primary", disabled=not lineup):
         try:
