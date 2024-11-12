@@ -1,6 +1,9 @@
-# Festival Playlist Generator 🎵
+# Festival Playlist Generator
 
 Create YouTube Music playlists with top songs from your festival lineup automatically! Simply paste your lineup, and the app will create a playlist with the most popular songs from each artist.
+
+> [!NOTE]
+> This (app and ReadMe) was done mostly by feeding Info to [claude.ai](https://claude.ai), so not all info below might be entirely correct. The app itself is working though, I´ve tested it with my own Youtube Music and a list of bands. Also be cautious with the list of bands, it will just look for the name, if there are multiple artists under that name you might not get what you´re looking for.
 
 ## Features
 
@@ -12,6 +15,11 @@ Create YouTube Music playlists with top songs from your festival lineup automati
 - Progress tracking during playlist creation
 - Detailed feedback about added songs
 - Direct links to created playlists
+
+## Future plans
+
+- add streamlit-googe-auth for OAuth support
+- include a way to get the list of bands directly from line-up images
 
 ## Live Demo
 
