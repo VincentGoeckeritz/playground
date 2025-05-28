@@ -1,4 +1,6 @@
 # requirements.txt
-streamlit==1.40.1
-ytmusicapi==1.8.2
-pillow~=11.0.0
+streamlit
+ytmusicapi
+google-auth
+google-auth-oauthlib
+google-auth-httplib2

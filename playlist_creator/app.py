@@ -4,50 +4,67 @@ from typing import List
 import json
 import base64
 import time
+import tempfile
 
 import streamlit as st
 from ytmusicapi import YTMusic
+import google.oauth2.credentials
+from google_auth_oauthlib.flow import Flow
+from google.auth.transport.requests import Request
+import google.auth.exceptions
 
+# OAuth 2.0 configuration
+CLIENT_ID = st.secrets.get("GOOGLE_CLIENT_ID", "")
+CLIENT_SECRET = st.secrets.get("GOOGLE_CLIENT_SECRET", "")
+REDIRECT_URI = st.secrets.get("REDIRECT_URI", "http://localhost:8501")
+
+SCOPES = [
+    'https://www.googleapis.com/auth/youtube',
+    'https://www.googleapis.com/auth/youtube.readonly'
+]
 
 class FestivalPlaylistGenerator:
-    def __init__(self, auth_str: str):
-        """Initialize YTMusic with authentication from auth string.
+    def __init__(self, credentials: google.oauth2.credentials.Credentials):
+        """Initialize YTMusic with OAuth2 credentials.
 
         Args:
-            auth_str: JSON string containing authentication headers
+            credentials: Google OAuth2 credentials object
         """
         try:
-            # Parse auth JSON
-            auth_data = json.loads(auth_str) if isinstance(auth_str, str) else auth_str
-
-            # Create headers dict with required fields
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:88.0) Gecko/20100101 Firefox/88.0',
-                'Accept': '*/*',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Content-Type': 'application/json',
-                'X-Goog-AuthUser': '0',
-                'x-origin': 'https://music.youtube.com'
-            }
-
-            # Add authentication headers
-            if 'authorization' in auth_data:
-                headers['authorization'] = auth_data['authorization']
-            if 'cookie' in auth_data:
-                headers['cookie'] = auth_data['cookie']
+            # Create a temporary file for OAuth headers
+            oauth_headers = self._create_oauth_headers(credentials)
 
             # Write headers to temp file
-            with open('headers_auth.json', 'w') as f:
-                json.dump(headers, f)
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump(oauth_headers, f)
+                temp_file = f.name
 
             # Initialize YTMusic
-            self.ytmusic = YTMusic('headers_auth.json')
+            self.ytmusic = YTMusic(temp_file)
 
             # Clean up temp file
-            os.remove('headers_auth.json')
+            os.remove(temp_file)
 
         except Exception as e:
             raise Exception(f"Failed to initialize YouTube Music: {str(e)}")
+
+    def _create_oauth_headers(self, credentials: google.oauth2.credentials.Credentials) -> dict:
+        """Create headers dict from OAuth2 credentials."""
+        # Ensure token is fresh
+        if credentials.expired and credentials.refresh_token:
+            credentials.refresh(Request())
+
+        headers = {
+            'authorization': f'Bearer {credentials.token}',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:88.0) Gecko/20100101 Firefox/88.0',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Content-Type': 'application/json',
+            'X-Goog-AuthUser': '0',
+            'x-origin': 'https://music.youtube.com'
+        }
+
+        return headers
 
     def get_top_songs(self, artist: str, limit: int = 3) -> List[dict]:
         """Get the top songs for an artist."""
@@ -170,9 +187,80 @@ class FestivalPlaylistGenerator:
             progress_bar.progress(1.0)
 
 
+def get_oauth_flow():
+    """Create and return OAuth flow object."""
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [REDIRECT_URI]
+            }
+        },
+        scopes=SCOPES
+    )
+    flow.redirect_uri = REDIRECT_URI
+    return flow
+
+
+def handle_oauth_callback():
+    """Handle OAuth callback and exchange code for credentials."""
+    try:
+        # Get authorization code from URL parameters
+        code = st.query_params.get("code")
+        if not code:
+            return None
+
+        # Exchange code for credentials
+        flow = get_oauth_flow()
+        flow.fetch_token(code=code)
+
+        return flow.credentials
+    except Exception as e:
+        st.error(f"OAuth callback error: {str(e)}")
+        return None
+
+
+def save_credentials(credentials: google.oauth2.credentials.Credentials):
+    """Save credentials to session state."""
+    st.session_state.credentials = {
+        'token': credentials.token,
+        'refresh_token': credentials.refresh_token,
+        'token_uri': credentials.token_uri,
+        'client_id': credentials.client_id,
+        'client_secret': credentials.client_secret,
+        'scopes': credentials.scopes,
+        'expiry': credentials.expiry.isoformat() if credentials.expiry else None
+    }
+    st.session_state.authenticated = True
+
+
+def load_credentials() -> google.oauth2.credentials.Credentials:
+    """Load credentials from session state."""
+    if 'credentials' in st.session_state:
+        cred_dict = st.session_state.credentials
+        expiry = datetime.fromisoformat(cred_dict['expiry']) if cred_dict['expiry'] else None
+
+        credentials = google.oauth2.credentials.Credentials(
+            token=cred_dict['token'],
+            refresh_token=cred_dict['refresh_token'],
+            token_uri=cred_dict['token_uri'],
+            client_id=cred_dict['client_id'],
+            client_secret=cred_dict['client_secret'],
+            scopes=cred_dict['scopes'],
+            expiry=expiry
+        )
+
+        return credentials
+    return None
+
+
 def create_playlist_link(playlist_id: str) -> str:
     """Create a formatted link to the YouTube Music playlist."""
     return f"https://music.youtube.com/playlist?list={playlist_id}"
+
 
 def show_playlist_results(playlist_id: str, songs: List[str]):
     """Show the results of playlist creation with nice formatting."""
@@ -199,187 +287,75 @@ def show_playlist_results(playlist_id: str, songs: List[str]):
             st.write(f"{i}. {song}")
 
 
-def show_error_message(error: str):
-    """Show a formatted error message with helpful suggestions."""
-
-    # Common error patterns and their user-friendly messages
-    error_patterns = {
-        "auth": {
-            "keywords": ["auth", "unauthorized", "permission", "credentials"],
-            "message": """
-            This appears to be an authentication issue. Please try:
-            1. Logging out and back in
-            2. Getting fresh authentication headers
-            3. Making sure you're logged into YouTube Music
-            """
-        },
-        "network": {
-            "keywords": ["network", "connection", "timeout", "unreachable"],
-            "message": """
-            This appears to be a network issue. Please try:
-            1. Checking your internet connection
-            2. Refreshing the page
-            3. Trying again in a few minutes
-            """
-        },
-        "rate_limit": {
-            "keywords": ["rate", "limit", "quota", "too many"],
-            "message": """
-            You might be hitting YouTube Music's rate limits. Please try:
-            1. Waiting a few minutes before trying again
-            2. Reducing the number of songs per artist
-            3. Processing fewer artists at once
-            """
-        }
-    }
-
-    # Determine error type and get appropriate message
-    error_lower = error.lower()
-    additional_help = None
-
-    for error_type, data in error_patterns.items():
-        if any(keyword in error_lower for keyword in data["keywords"]):
-            additional_help = data["message"]
-            break
-
-    # Show error message
-    st.error(f"""
-    ### ❌ Playlist Creation Failed
-
-    {error}
-
-    {additional_help if additional_help else '''
-    Please check:
-    - Your authentication is still valid
-    - The artists' names are correct
-    - You have sufficient permissions in YouTube Music
-    - Your internet connection is stable
-    '''}
-    """)
-
-    # Show retry suggestion
-    st.info("You can try again after addressing the issue above.")
-
-
-def show_authentication_help():
-    """Show instructions for getting authentication headers."""
+def show_google_signin():
+    """Show Google Sign-In interface."""
     st.markdown("""
-    ### How to get your YouTube Music Authentication:
+    ### 🔐 Sign in with Google
 
-    1. Install the browser extension "ModHeader" ([Chrome](https://chrome.google.com/webstore/detail/modheader/idgpnmonknjnojddfkpgkljpfnnfcklj) or [Firefox](https://addons.mozilla.org/en-US/firefox/addon/modheader-firefox/))
+    To create playlists in your YouTube Music account, you need to sign in with your Google account.
 
-    2. Open [YouTube Music](https://music.youtube.com/) in your browser
+    **What permissions do we need?**
+    - Access to your YouTube account
+    - Ability to create and manage playlists
+    - Read access to search for songs and artists
 
-    3. Make sure you're logged into your Google Account
-
-    4. Open DevTools (press F12 or right-click and select 'Inspect')
-
-    5. Go to the 'Network' tab in DevTools
-
-    6. Filter for 'browse' in the network tab
-
-    7. Click on a 'browse' request and look for these request headers:
-       - `authorization`
-       - `cookie`
-
-    8. Copy these values and paste them below in this format:
-    ```json
-    {
-        "authorization": "SAPISIDHASH ...",
-        "cookie": "VISITOR_INFO1_LIVE=...; CONSENT=...; ..."
-    }
-    ```
-
-    > Note: These credentials are only stored in your browser session and are never saved on our servers.
-    > You'll need to provide them again if you close the browser or clear your session.
-
-    ### Security Note:
-    - Only use this app on a trusted device
-    - Your credentials give access to your YouTube Music account
-    - We never store or transmit your credentials
-    - All playlists are created as private by default
+    **Your privacy is important:**
+    - We only access what's needed to create playlists
+    - Your credentials are stored securely in your browser session
+    - We never store your personal information on our servers
     """)
 
+    # Check if OAuth is properly configured
+    if not CLIENT_ID or not CLIENT_SECRET:
+        st.error("""
+        **OAuth Configuration Missing**
 
-def validate_auth_json(auth_str: str) -> bool:
-    """Validate the authentication JSON format."""
+        The app administrator needs to configure Google OAuth credentials.
+        Please contact the app administrator to set up:
+        - `GOOGLE_CLIENT_ID`
+        - `GOOGLE_CLIENT_SECRET`
+        - `REDIRECT_URI`
+
+        These should be added to the Streamlit secrets.
+        """)
+
+        with st.expander("📝 Setup Instructions for Administrators"):
+            st.markdown("""
+            ### Setting up Google OAuth
+
+            1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
+            2. Create a new project or select an existing one
+            3. Enable the YouTube Data API v3
+            4. Go to "Credentials" and create OAuth 2.0 Client IDs
+            5. Add authorized redirect URIs (e.g., `http://localhost:8501` for local development)
+            6. Copy the Client ID and Client Secret
+            7. Add them to your Streamlit secrets:
+
+            ```toml
+            # .streamlit/secrets.toml
+            GOOGLE_CLIENT_ID = "your-client-id"
+            GOOGLE_CLIENT_SECRET = "your-client-secret"
+            REDIRECT_URI = "http://localhost:8501"
+            ```
+            """)
+        return
+
+    # Create OAuth flow and get authorization URL
     try:
-        auth_data = json.loads(auth_str)
-        required_fields = ['authorization', 'cookie']
-        return all(field in auth_data for field in required_fields)
-    except json.JSONDecodeError:
-        return False
+        flow = get_oauth_flow()
+        auth_url, _ = flow.authorization_url(prompt='consent')
 
+        st.markdown(f"""
+        Click the button below to sign in with your Google account:
+        """)
 
-def init_ytmusic(auth_str: str) -> YTMusic:
-    """Initialize YTMusic with authentication headers."""
-    try:
-        auth_data = json.loads(auth_str)
+        if st.button("🔑 Sign in with Google", type="primary"):
+            st.markdown(f'<meta http-equiv="refresh" content="0; url={auth_url}">',
+                       unsafe_allow_html=True)
+            st.info("Redirecting to Google Sign-In...")
 
-        # Create headers dict with required fields
-        headers = {
-            'authorization': auth_data['authorization'],
-            'cookie': auth_data['cookie'],
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:88.0) Gecko/20100101 Firefox/88.0',
-            'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Content-Type': 'application/json',
-            'X-Goog-AuthUser': '0',
-            'x-origin': 'https://music.youtube.com'
-        }
-
-        # Write headers to temp file
-        with open('headers_auth.json', 'w') as f:
-            json.dump(headers, f)
-
-        # Initialize YTMusic
-        ytmusic = YTMusic('headers_auth.json')
-
-        # Clean up temp file
-        os.remove('headers_auth.json')
-
-        return ytmusic
     except Exception as e:
-        raise Exception(f"Failed to initialize YouTube Music: {str(e)}")
-
-
-def load_persistent_auth():
-    """Load authentication from local storage."""
-    try:
-        # Try to get saved auth data
-        if 'persistent_auth' in st.session_state:
-            auth_data = st.session_state.persistent_auth
-            # Verify the auth data still works
-            generator = FestivalPlaylistGenerator(auth_data['auth_str'])
-            if generator.test_auth():
-                st.session_state.auth_str = auth_data['auth_str']
-                st.session_state.authenticated = True
-                st.session_state.auth_timestamp = auth_data.get('timestamp', datetime.now().isoformat())
-                return True
-            else:
-                # Auth is no longer valid, clear it
-                del st.session_state.persistent_auth
-    except Exception:
-        if 'persistent_auth' in st.session_state:
-            del st.session_state.persistent_auth
-    return False
-
-
-def save_persistent_auth(auth_str: str):
-    """Save authentication to local storage."""
-    st.session_state.persistent_auth = {
-        'auth_str': auth_str,
-        'timestamp': datetime.now().isoformat()
-    }
-
-
-def format_timestamp(timestamp_str: str) -> str:
-    """Format the timestamp for display."""
-    try:
-        dt = datetime.fromisoformat(timestamp_str)
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
-    except:
-        return "Unknown"
+        st.error(f"Failed to create sign-in link: {str(e)}")
 
 
 def main():
@@ -396,104 +372,64 @@ def main():
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
 
-    # Try to load saved authentication
+    # Handle OAuth callback
+    if st.query_params.get("code") and not st.session_state.authenticated:
+        with st.spinner("Completing sign-in..."):
+            credentials = handle_oauth_callback()
+            if credentials:
+                save_credentials(credentials)
+                st.success("✅ Successfully signed in!")
+                # Clear URL parameters
+                st.query_params.clear()
+                time.sleep(1)
+                st.rerun()
+
+    # Check if user is authenticated
     if not st.session_state.authenticated:
-        if load_persistent_auth():
-            st.success("🔄 Successfully restored previous authentication!")
+        show_google_signin()
+        return
 
-    # Authentication section
-    if not st.session_state.authenticated:
-        st.warning("Please authenticate with YouTube Music to continue")
+    # Load credentials and verify they're still valid
+    credentials = load_credentials()
+    if not credentials:
+        st.session_state.authenticated = False
+        st.rerun()
 
-        with st.expander("ℹ️ How to authenticate", expanded=True):
-            show_authentication_help()
-
-        auth_input = st.text_area(
-            "Enter your YouTube Music authentication JSON:",
-            help="Paste your authentication headers in JSON format. See instructions above."
-        )
-
-        if st.button("Authenticate", type="primary"):
-            if auth_input:
-                if validate_auth_json(auth_input):
-                    try:
-                        # Initialize generator with auth
-                        generator = FestivalPlaylistGenerator(auth_input)
-
-                        # Test authentication
-                        if generator.test_auth():
-                            # Store auth in session state (encoded to prevent XSS)
-                            encoded_auth = base64.b64encode(auth_input.encode()).decode()
-                            st.session_state.auth_str = encoded_auth
-                            st.session_state.authenticated = True
-                            # Save to persistent storage
-                            save_persistent_auth(encoded_auth)
-                            st.success("Authentication successful!")
-                            time.sleep(1)  # Give user time to see success message
-                            st.rerun()
-                        else:
-                            st.error("Authentication test failed - please check your credentials")
-                    except Exception as e:
-                        st.error(f"Authentication failed: {str(e)}")
-                else:
-                    st.error("Invalid authentication format. Please follow the instructions above.")
-
-        st.markdown("---")
-        st.markdown("""
-        ### Troubleshooting
-
-        If you're having trouble authenticating:
-        1. Make sure you're logged into YouTube Music
-        2. Check that you've copied both the authorization and cookie headers
-        3. Verify the JSON format matches the example
-        4. Try refreshing YouTube Music and getting new headers
-        5. Clear your browser cache and cookies, then log in again
-
-        Still having issues? Try these steps:
-        1. Open YouTube Music in a private/incognito window
-        2. Log in to your account
-        3. Get fresh authentication headers
-        4. Make sure to include all required fields
-        """)
+    # Refresh token if needed
+    try:
+        if credentials.expired and credentials.refresh_token:
+            credentials.refresh(Request())
+            save_credentials(credentials)
+    except google.auth.exceptions.RefreshError:
+        st.error("Your session has expired. Please sign in again.")
+        st.session_state.authenticated = False
+        if st.button("Sign in again"):
+            st.rerun()
         return
 
     # Show authentication status in sidebar
     with st.sidebar:
         st.write("### Authentication Status")
-        st.write("✅ Authenticated")
-        if 'auth_timestamp' in st.session_state:
-            st.write(f"Last authenticated: {format_timestamp(st.session_state.auth_timestamp)}")
+        st.write("✅ Signed in with Google")
 
-        # Add authentication check button
-        if st.button("🔄 Check Authentication"):
+        if st.button("🔄 Check Connection"):
             try:
-                generator = FestivalPlaylistGenerator(
-                    base64.b64decode(st.session_state.auth_str).decode()
-                )
+                generator = FestivalPlaylistGenerator(credentials)
                 if generator.test_auth():
-                    st.success("Authentication is valid!")
-                    # Update timestamp
-                    save_persistent_auth(st.session_state.auth_str)
+                    st.success("Connection is working!")
                 else:
-                    st.error("Authentication has expired!")
-                    st.session_state.authenticated = False
-                    if 'persistent_auth' in st.session_state:
-                        del st.session_state.persistent_auth
-                    st.rerun()
+                    st.error("Connection failed!")
             except Exception as e:
-                st.error(f"Authentication error: {str(e)}")
-                st.session_state.authenticated = False
-                if 'persistent_auth' in st.session_state:
-                    del st.session_state.persistent_auth
-                st.rerun()
+                st.error(f"Connection error: {str(e)}")
 
-        if st.button("📤 Logout"):
+        if st.button("📤 Sign Out"):
             st.session_state.authenticated = False
-            if 'persistent_auth' in st.session_state:
-                del st.session_state.persistent_auth
+            if 'credentials' in st.session_state:
+                del st.session_state.credentials
+            st.query_params.clear()
             st.rerun()
 
-    # Main application (only shown when authenticated)
+    # Main application
     with st.expander("ℹ️ How to use"):
         st.write("""
         1. Enter each artist name on a new line
@@ -533,15 +469,9 @@ def main():
             help="How many top songs to include for each artist"
         )
 
-    # Logout option
-    if st.button("📤 Logout", type="secondary", help="Clear your authentication"):
-        st.session_state.authenticated = False
-        st.rerun()
-
     if st.button("🎵 Create Playlist", type="primary", disabled=not lineup):
         try:
-            auth_str = base64.b64decode(st.session_state.auth_str).decode()
-            generator = FestivalPlaylistGenerator(auth_str)
+            generator = FestivalPlaylistGenerator(credentials)
 
             # Create playlist
             playlist_id, songs = generator.create_festival_playlist(
@@ -553,29 +483,34 @@ def main():
             if playlist_id:
                 show_playlist_results(playlist_id, songs)
             else:
-                show_error_message("Failed to create playlist. Please check the error messages above.")
+                st.error("Failed to create playlist. Please check the error messages above.")
 
         except Exception as e:
             error_message = str(e)
             # Check if it might be an authentication issue
-            if "auth" in error_message.lower() or "unauthorized" in error_message.lower():
-                show_error_message(
-                    "Authentication error. Please try logging out and authenticating again.\n\n"
-                    f"Error details: {error_message}"
-                )
-                # Clear authentication if it seems invalid
-                st.session_state.authenticated = False
-                if 'persistent_auth' in st.session_state:
-                    del st.session_state.persistent_auth
-                st.warning("You've been logged out due to authentication issues. Please refresh the page and log in again.")
+            if any(keyword in error_message.lower() for keyword in ["auth", "unauthorized", "permission", "credentials"]):
+                st.error(f"""
+                **Authentication Error**
+
+                {error_message}
+
+                Please try signing out and signing in again.
+                """)
+
+                if st.button("Sign out and try again"):
+                    st.session_state.authenticated = False
+                    if 'credentials' in st.session_state:
+                        del st.session_state.credentials
+                    st.rerun()
             else:
-                show_error_message(f"An unexpected error occurred: {error_message}")
+                st.error(f"An unexpected error occurred: {error_message}")
 
     # Footer
     st.markdown("---")
     st.markdown(
-        "This app creates private playlists in your YouTube Music account."
+        "This app creates private playlists in your YouTube Music account using secure Google Sign-In."
     )
+
 
 if __name__ == "__main__":
     main()
