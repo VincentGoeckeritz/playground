@@ -394,11 +394,27 @@ def show_google_signin():
 
         st.markdown("Click the button below to sign in with your Google account:")
 
-        # Show the full auth URL for debugging
-        with st.expander("🔍 Generated Auth URL (click to expand)"):
-            st.code(auth_url, language="text")
+        # Use st.link_button for reliable redirect
+        st.link_button(
+            "🔑 Sign in with Google",
+            auth_url,
+            type="primary"
+        )
 
-            # Parse the URL to show components
+        st.info("👆 Click the button above to be redirected to Google's sign-in page. After signing in, you'll be automatically redirected back to this app.")
+
+        # Show debug info in expander for troubleshooting
+        with st.expander("🔍 Troubleshooting"):
+            st.markdown("""
+            **If the sign-in doesn't work:**
+            1. Make sure you allow pop-ups for this site
+            2. Try using the direct link below
+            3. Check that you're using a supported browser
+            """)
+
+            st.markdown(f"**Direct link:** [Sign in with Google]({auth_url})")
+
+            # Show URL components for debugging
             from urllib.parse import urlparse, parse_qs
             parsed = urlparse(auth_url)
             query_params = parse_qs(parsed.query)
@@ -407,34 +423,6 @@ def show_google_signin():
             st.write(f"- **client_id:** `{query_params.get('client_id', ['Not found'])[0][:20]}...`")
             st.write(f"- **redirect_uri:** `{query_params.get('redirect_uri', ['Not found'])[0]}`")
             st.write(f"- **scope:** `{query_params.get('scope', ['Not found'])[0]}`")
-            st.write(f"- **response_type:** `{query_params.get('response_type', ['Not found'])[0]}`")
-
-        # Test the auth URL manually
-        st.markdown("**Manual Test:** Copy the auth URL above and paste it directly in your browser to test if it works outside of Streamlit.")
-
-        # Use different redirect methods for better compatibility
-        if st.button("🔑 Sign in with Google", type="primary"):
-            # Method 1: Meta refresh (most reliable)
-            st.markdown(f'<meta http-equiv="refresh" content="0;url={auth_url}">',
-                       unsafe_allow_html=True)
-
-            # Method 2: JavaScript as backup
-            st.markdown(f"""
-            <script>
-                setTimeout(function() {{
-                    window.top.location.href = "{auth_url}";
-                }}, 100);
-            </script>
-            """, unsafe_allow_html=True)
-
-            # Method 3: Direct link as fallback
-            st.markdown(f"""
-            **If the redirect doesn't work automatically, click here:**
-
-            [🔑 **Sign in with Google (Direct Link)**]({auth_url})
-            """)
-
-            st.info("Redirecting to Google Sign-In... If it doesn't work, use the direct link above.")
 
     except Exception as e:
         st.error(f"Failed to create sign-in link: {str(e)}")
