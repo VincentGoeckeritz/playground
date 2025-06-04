@@ -348,26 +348,6 @@ def show_google_signin():
     - We never store your personal information on our servers
     """)
 
-    # Add debug information
-    with st.expander("🔧 Debug Information"):
-        st.write(f"**Client ID configured:** {'✅' if CLIENT_ID else '❌'}")
-        st.write(f"**Client Secret configured:** {'✅' if CLIENT_SECRET else '❌'}")
-        st.write(f"**Redirect URI:** `{REDIRECT_URI}`")
-
-        # Show current URL/environment info
-        try:
-            # Try to detect if we're on Streamlit Cloud
-            import socket
-            hostname = socket.gethostname()
-            st.write(f"**Hostname:** `{hostname}`")
-        except:
-            st.write("**Hostname:** Unable to detect")
-
-        # Show partial client ID for verification
-        if CLIENT_ID:
-            st.write(f"**Client ID (first 20 chars):** `{CLIENT_ID[:20]}...`")
-            st.write(f"**Client ID (last 10 chars):** `...{CLIENT_ID[-10:]}`")
-
     # Check if OAuth is properly configured
     if not CLIENT_ID or not CLIENT_SECRET:
         st.error("""
@@ -413,16 +393,6 @@ def show_google_signin():
             """)
 
             st.markdown(f"**Direct link:** [Sign in with Google]({auth_url})")
-
-            # Show URL components for debugging
-            from urllib.parse import urlparse, parse_qs
-            parsed = urlparse(auth_url)
-            query_params = parse_qs(parsed.query)
-
-            st.write("**URL Components:**")
-            st.write(f"- **client_id:** `{query_params.get('client_id', ['Not found'])[0][:20]}...`")
-            st.write(f"- **redirect_uri:** `{query_params.get('redirect_uri', ['Not found'])[0]}`")
-            st.write(f"- **scope:** `{query_params.get('scope', ['Not found'])[0]}`")
 
     except Exception as e:
         st.error(f"Failed to create sign-in link: {str(e)}")
