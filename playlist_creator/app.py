@@ -5,6 +5,7 @@ import json
 import base64
 import time
 import tempfile
+import re
 
 import streamlit as st
 from ytmusicapi import YTMusic
@@ -45,8 +46,19 @@ class FestivalPlaylistGenerator:
             # Clean up temp file
             os.remove(temp_file)
 
+            self.last_request_time = 0
+            self.min_request_interval = 0.1  # 100ms between requests
+
         except Exception as e:
             raise Exception(f"Failed to initialize YouTube Music: {str(e)}")
+
+    def _rate_limit(self):
+        """Simple rate limiting."""
+        current_time = time.time()
+        time_since_last = current_time - self.last_request_time
+        if time_since_last < self.min_request_interval:
+            time.sleep(self.min_request_interval - time_since_last)
+        self.last_request_time = time.time()
 
     def _create_oauth_headers(self, credentials: google.oauth2.credentials.Credentials) -> dict:
         """Create headers dict from OAuth2 credentials."""
@@ -68,6 +80,16 @@ class FestivalPlaylistGenerator:
 
     def get_top_songs(self, artist: str, limit: int = 3) -> List[dict]:
         """Get the top songs for an artist."""
+        # Validate inputs
+        if not artist or len(artist.strip()) < 2:
+            return []
+
+        if limit < 1 or limit > 10:
+            limit = 3
+
+        # Add rate limiting
+        self._rate_limit()
+
         try:
             # Search for the artist
             search_results = self.ytmusic.search(artist, filter="artists")
@@ -358,6 +380,63 @@ def show_google_signin():
         st.error(f"Failed to create sign-in link: {str(e)}")
 
 
+def sanitize_artist_name(artist: str) -> str:
+    """Sanitize artist name for safe API usage."""
+    if not artist:
+        return ""
+
+    # Remove excessive whitespace
+    artist = artist.strip()
+
+    # Limit length (YouTube searches work best with reasonable lengths)
+    artist = artist[:100]
+
+    # Remove potentially problematic characters but keep international chars
+    # Keep letters, numbers, spaces, common punctuation in artist names
+    artist = re.sub(r'[^\w\s\-\'\.\&\(\)]', '', artist, flags=re.UNICODE)
+
+    # Remove excessive spaces
+    artist = re.sub(r'\s+', ' ', artist)
+
+    return artist.strip()
+
+
+def validate_lineup(lineup_text: str) -> tuple[list[str], list[str]]:
+    """Validate and sanitize the lineup text."""
+    lines = lineup_text.split('\n')
+
+    # Limit number of artists to prevent API abuse
+    MAX_ARTISTS = 50
+    if len(lines) > MAX_ARTISTS:
+        st.warning(f"Too many artists! Limited to first {MAX_ARTISTS} entries.")
+        lines = lines[:MAX_ARTISTS]
+
+    valid_artists = []
+    warnings = []
+
+    for i, line in enumerate(lines, 1):
+        original = line.strip()
+        if not original:
+            continue
+
+        sanitized = sanitize_artist_name(original)
+
+        if not sanitized:
+            warnings.append(f"Line {i}: '{original}' contains no valid characters")
+            continue
+
+        if len(sanitized) < 2:
+            warnings.append(f"Line {i}: '{original}' too short after cleaning")
+            continue
+
+        if sanitized != original:
+            warnings.append(f"Line {i}: Cleaned '{original}' → '{sanitized}'")
+
+        valid_artists.append(sanitized)
+
+    return valid_artists, warnings
+
+
 def main():
     st.set_page_config(
         page_title="Festival Playlist Generator",
@@ -443,11 +522,24 @@ def main():
     lineup_text = st.text_area(
         "Lineup",
         height=200,
-        help="Enter each artist name on a new line"
+        help="Enter each artist name on a new line (max 50 artists)"
     )
 
-    # Convert text to list of artists
-    lineup = [artist.strip() for artist in lineup_text.split('\n') if artist.strip()]
+    # Validate and sanitize lineup
+    if lineup_text.strip():
+        lineup, warnings = validate_lineup(lineup_text)
+
+        # Show warnings if any
+        if warnings:
+            with st.expander("⚠️ Input Warnings", expanded=False):
+                for warning in warnings:
+                    st.warning(warning)
+    else:
+        lineup = []
+
+    # Show artist count
+    if lineup:
+        st.info(f"Found {len(lineup)} valid artists")
 
     col1, col2 = st.columns(2)
 
