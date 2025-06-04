@@ -412,14 +412,29 @@ def show_google_signin():
         # Test the auth URL manually
         st.markdown("**Manual Test:** Copy the auth URL above and paste it directly in your browser to test if it works outside of Streamlit.")
 
+        # Use different redirect methods for better compatibility
         if st.button("🔑 Sign in with Google", type="primary"):
-            # Use JavaScript redirect for better compatibility
+            # Method 1: Meta refresh (most reliable)
+            st.markdown(f'<meta http-equiv="refresh" content="0;url={auth_url}">',
+                       unsafe_allow_html=True)
+
+            # Method 2: JavaScript as backup
             st.markdown(f"""
             <script>
-                window.location.href = "{auth_url}";
+                setTimeout(function() {{
+                    window.top.location.href = "{auth_url}";
+                }}, 100);
             </script>
             """, unsafe_allow_html=True)
-            st.info("Redirecting to Google Sign-In...")
+
+            # Method 3: Direct link as fallback
+            st.markdown(f"""
+            **If the redirect doesn't work automatically, click here:**
+
+            [🔑 **Sign in with Google (Direct Link)**]({auth_url})
+            """)
+
+            st.info("Redirecting to Google Sign-In... If it doesn't work, use the direct link above.")
 
     except Exception as e:
         st.error(f"Failed to create sign-in link: {str(e)}")
