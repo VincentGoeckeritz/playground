@@ -230,18 +230,39 @@ def get_oauth_flow():
 def handle_oauth_callback():
     """Handle OAuth callback and exchange code for credentials."""
     try:
-        # Get authorization code from URL parameters
+        # Get all query parameters for debugging
+        all_params = dict(st.query_params)
+        st.write("**OAuth Callback Debug Info:**")
+        st.write(f"All query parameters: {all_params}")
+
+        # Check for OAuth errors first
+        error = st.query_params.get("error")
+        if error:
+            error_description = st.query_params.get("error_description", "No description provided")
+            st.error(f"**OAuth Error:** {error}")
+            st.error(f"**Description:** {error_description}")
+            return None
+
+        # Get authorization code
         code = st.query_params.get("code")
         if not code:
+            st.warning("No authorization code received in callback")
             return None
+
+        st.info(f"Received authorization code: {code[:10]}...")
 
         # Exchange code for credentials
         flow = get_oauth_flow()
+        st.info("Attempting to exchange code for credentials...")
+
         flow.fetch_token(code=code)
+        st.success("Successfully exchanged code for credentials!")
 
         return flow.credentials
+
     except Exception as e:
         st.error(f"OAuth callback error: {str(e)}")
+        st.exception(e)  # Show full traceback
         return None
 
 
@@ -327,6 +348,26 @@ def show_google_signin():
     - We never store your personal information on our servers
     """)
 
+    # Add debug information
+    with st.expander("🔧 Debug Information"):
+        st.write(f"**Client ID configured:** {'✅' if CLIENT_ID else '❌'}")
+        st.write(f"**Client Secret configured:** {'✅' if CLIENT_SECRET else '❌'}")
+        st.write(f"**Redirect URI:** `{REDIRECT_URI}`")
+
+        # Show current URL/environment info
+        try:
+            # Try to detect if we're on Streamlit Cloud
+            import socket
+            hostname = socket.gethostname()
+            st.write(f"**Hostname:** `{hostname}`")
+        except:
+            st.write("**Hostname:** Unable to detect")
+
+        # Show partial client ID for verification
+        if CLIENT_ID:
+            st.write(f"**Client ID (first 20 chars):** `{CLIENT_ID[:20]}...`")
+            st.write(f"**Client ID (last 10 chars):** `...{CLIENT_ID[-10:]}`")
+
     # Check if OAuth is properly configured
     if not CLIENT_ID or not CLIENT_SECRET:
         st.error("""
@@ -340,44 +381,49 @@ def show_google_signin():
 
         These should be added to the Streamlit secrets.
         """)
-
-        with st.expander("📝 Setup Instructions for Administrators"):
-            st.markdown("""
-            ### Setting up Google OAuth
-
-            1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
-            2. Create a new project or select an existing one
-            3. Enable the YouTube Data API v3
-            4. Go to "Credentials" and create OAuth 2.0 Client IDs
-            5. Add authorized redirect URIs (e.g., `http://localhost:8501` for local development)
-            6. Copy the Client ID and Client Secret
-            7. Add them to your Streamlit secrets:
-
-            ```toml
-            # .streamlit/secrets.toml
-            GOOGLE_CLIENT_ID = "your-client-id"
-            GOOGLE_CLIENT_SECRET = "your-client-secret"
-            REDIRECT_URI = "http://localhost:8501"
-            ```
-            """)
         return
 
     # Create OAuth flow and get authorization URL
     try:
         flow = get_oauth_flow()
-        auth_url, _ = flow.authorization_url(prompt='consent')
+        auth_url, _ = flow.authorization_url(
+            prompt='consent',
+            access_type='offline',
+            include_granted_scopes='true'
+        )
 
-        st.markdown(f"""
-        Click the button below to sign in with your Google account:
-        """)
+        st.markdown("Click the button below to sign in with your Google account:")
+
+        # Show the full auth URL for debugging
+        with st.expander("🔍 Generated Auth URL (click to expand)"):
+            st.code(auth_url, language="text")
+
+            # Parse the URL to show components
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(auth_url)
+            query_params = parse_qs(parsed.query)
+
+            st.write("**URL Components:**")
+            st.write(f"- **client_id:** `{query_params.get('client_id', ['Not found'])[0][:20]}...`")
+            st.write(f"- **redirect_uri:** `{query_params.get('redirect_uri', ['Not found'])[0]}`")
+            st.write(f"- **scope:** `{query_params.get('scope', ['Not found'])[0]}`")
+            st.write(f"- **response_type:** `{query_params.get('response_type', ['Not found'])[0]}`")
+
+        # Test the auth URL manually
+        st.markdown("**Manual Test:** Copy the auth URL above and paste it directly in your browser to test if it works outside of Streamlit.")
 
         if st.button("🔑 Sign in with Google", type="primary"):
-            st.markdown(f'<meta http-equiv="refresh" content="0; url={auth_url}">',
-                       unsafe_allow_html=True)
+            # Use JavaScript redirect for better compatibility
+            st.markdown(f"""
+            <script>
+                window.location.href = "{auth_url}";
+            </script>
+            """, unsafe_allow_html=True)
             st.info("Redirecting to Google Sign-In...")
 
     except Exception as e:
         st.error(f"Failed to create sign-in link: {str(e)}")
+        st.exception(e)  # Show full traceback
 
 
 def sanitize_artist_name(artist: str) -> str:
